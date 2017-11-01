@@ -38,6 +38,10 @@ class Importer {
   // Creates a platform-specific importer instance
   static Importer *CreateInstance(DrmResources *drm);
 
+  // Imports EGLImage for glcompositor, since NV handles this in non-standard
+  // way, and fishing out the details is specific to the gralloc used.
+  virtual EGLImageKHR ImportImage(EGLDisplay egl_display, buffer_handle_t handle) = 0;
+
   // Imports the buffer referred to by handle into bo.
   //
   // Note: This can be called from a different thread than ReleaseBuffer. The
@@ -146,6 +150,18 @@ class Planner {
 // This plan stage extracts all protected layers and places them on dedicated
 // planes.
 class PlanStageProtected : public Planner::PlanStage {
+ public:
+  int ProvisionPlanes(std::vector<DrmCompositionPlane> *composition,
+                      std::map<size_t, DrmHwcLayer *> &layers, DrmCrtc *crtc,
+                      std::vector<DrmPlane *> *planes);
+};
+
+// This plan stage provisions the precomp plane with any remaining layers that
+// are on top of the current precomp layers. This stage should be included in
+// all platforms before loosely allocating layers (i.e. PlanStageGreedy) if
+// any previous plan could have modified the precomp plane layers
+// (ex. PlanStageProtected).
+class PlanStagePrecomp : public Planner::PlanStage {
  public:
   int ProvisionPlanes(std::vector<DrmCompositionPlane> *composition,
                       std::map<size_t, DrmHwcLayer *> &layers, DrmCrtc *crtc,

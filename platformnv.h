@@ -34,6 +34,7 @@ class NvImporter : public Importer {
 
   int Init();
 
+  EGLImageKHR ImportImage(EGLDisplay egl_display, buffer_handle_t handle) override;
   int ImportBuffer(buffer_handle_t handle, hwc_drm_bo_t *bo) override;
   int ReleaseBuffer(hwc_drm_bo_t *bo) override;
 
@@ -70,6 +71,19 @@ class PlanStageProtectedRotated : public Planner::PlanStage {
   int ProvisionPlanes(std::vector<DrmCompositionPlane> *composition,
                       std::map<size_t, DrmHwcLayer *> &layers, DrmCrtc *crtc,
                       std::vector<DrmPlane *> *planes);
+};
+
+// This stage looks for layers that would not be supported by Tegra driver due
+// to limitations such as downscaling. If the layer is unprotected it will be
+// punted for precomp to handle, other wise if protected it will be dropped as
+// it cannot be supported by any means.
+class PlanStageNvLimits : public Planner::PlanStage {
+ public:
+  int ProvisionPlanes(std::vector<DrmCompositionPlane> *composition,
+                      std::map<size_t, DrmHwcLayer *> &layers, DrmCrtc *crtc,
+                      std::vector<DrmPlane *> *planes);
+ protected:
+  bool CheckLayer(size_t zorder, DrmHwcLayer *layer);
 };
 }
 

@@ -34,7 +34,6 @@ namespace android {
 VSyncWorker::VSyncWorker()
     : Worker("vsync", HAL_PRIORITY_URGENT_DISPLAY),
       drm_(NULL),
-      procs_(NULL),
       display_(-1),
       last_timestamp_(-1) {
 }
@@ -49,41 +48,19 @@ int VSyncWorker::Init(DrmResources *drm, int display) {
   return InitWorker();
 }
 
-int VSyncWorker::SetProcs(hwc_procs_t const *procs) {
-  int ret = Lock();
-  if (ret) {
-    ALOGE("Failed to lock vsync worker lock %d\n", ret);
-    return ret;
-  }
-
-  procs_ = procs;
-
-  ret = Unlock();
-  if (ret) {
-    ALOGE("Failed to unlock vsync worker lock %d\n", ret);
-    return ret;
-  }
-  return 0;
+void VSyncWorker::RegisterCallback(std::shared_ptr<VsyncCallback> callback) {
+  Lock();
+  callback_ = callback;
+  Unlock();
 }
 
-int VSyncWorker::VSyncControl(bool enabled) {
-  int ret = Lock();
-  if (ret) {
-    ALOGE("Failed to lock vsync worker lock %d\n", ret);
-    return ret;
-  }
-
+void VSyncWorker::VSyncControl(bool enabled) {
+  Lock();
   enabled_ = enabled;
   last_timestamp_ = -1;
-  int signal_ret = SignalLocked();
+  Unlock();
 
-  ret = Unlock();
-  if (ret) {
-    ALOGE("Failed to unlock vsync worker lock %d\n", ret);
-    return ret;
-  }
-
-  return signal_ret;
+  Signal();
 }
 
 /*
@@ -136,12 +113,9 @@ int VSyncWorker::SyntheticWaitVBlank(int64_t *timestamp) {
 }
 
 void VSyncWorker::Routine() {
-  int ret = Lock();
-  if (ret) {
-    ALOGE("Failed to lock worker %d", ret);
-    return;
-  }
+  int ret;
 
+  Lock();
   if (!enabled_) {
     ret = WaitForSignalOrExitLocked();
     if (ret == -EINTR) {
@@ -151,12 +125,9 @@ void VSyncWorker::Routine() {
 
   bool enabled = enabled_;
   int display = display_;
-  hwc_procs_t const *procs = procs_;
+  std::shared_ptr<VsyncCallback> callback(callback_);
 
-  ret = Unlock();
-  if (ret) {
-    ALOGE("Failed to unlock worker %d", ret);
-  }
+  Unlock();
 
   if (!enabled)
     return;
@@ -188,16 +159,16 @@ void VSyncWorker::Routine() {
   }
 
   /*
-   * There's a race here where a change in procs_ will not take effect until
+   * There's a race here where a change in callback_ will not take effect until
    * the next subsequent requested vsync. This is unavoidable since we can't
    * call the vsync hook while holding the thread lock.
    *
-   * We could shorten the race window by caching procs_ right before calling
-   * the hook. However, in practice, procs_ is only updated once, so it's not
+   * We could shorten the race window by caching callback_ right before calling
+   * the hook. However, in practice, callback_ is only updated once, so it's not
    * worth the overhead.
    */
-  if (procs && procs->vsync)
-    procs->vsync(procs, display, timestamp);
+  if (callback)
+    callback->Callback(display, timestamp);
   last_timestamp_ = timestamp;
 }
 }

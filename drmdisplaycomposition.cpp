@@ -258,8 +258,10 @@ int DrmDisplayComposition::CreateAndAssignReleaseFences() {
     if (!layer->release_fence)
       continue;
     int ret = layer->release_fence.Set(CreateNextTimelineFence());
-    if (ret < 0)
+    if (ret < 0) {
+      ALOGE("Failed to set the release fence (squash) %d", ret);
       return ret;
+    }
   }
   timeline_squash_done_ = timeline_;
 
@@ -276,8 +278,10 @@ int DrmDisplayComposition::CreateAndAssignReleaseFences() {
     if (!layer->release_fence)
       continue;
     int ret = layer->release_fence.Set(CreateNextTimelineFence());
-    if (ret < 0)
+    if (ret < 0) {
+      ALOGE("Failed to set the release fence (comp) %d", ret);
       return ret;
+    }
   }
 
   return 0;
@@ -374,6 +378,9 @@ int DrmDisplayComposition::Plan(SquashState *squash,
   for (auto &i : composition_planes_) {
     if (!i.plane())
       continue;
+
+    // make sure that source layers are ordered based on zorder
+    std::sort(i.source_layers().begin(), i.source_layers().end());
 
     std::vector<DrmPlane *> *container;
     if (i.plane()->type() == DRM_PLANE_TYPE_PRIMARY)

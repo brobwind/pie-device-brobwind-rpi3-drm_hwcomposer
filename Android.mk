@@ -15,6 +15,22 @@
 ifeq ($(strip $(BOARD_USES_DRM_HWCOMPOSER)),true)
 
 LOCAL_PATH := $(call my-dir)
+
+# =====================
+# libdrmhwc_utils.a
+# =====================
+include $(CLEAR_VARS)
+
+LOCAL_SRC_FILES := \
+	worker.cpp
+
+LOCAL_MODULE := libdrmhwc_utils
+
+include $(BUILD_STATIC_LIBRARY)
+
+# =====================
+# hwcomposer.drm.so
+# =====================
 include $(CLEAR_VARS)
 
 LOCAL_SHARED_LIBRARIES := \
@@ -28,9 +44,10 @@ LOCAL_SHARED_LIBRARIES := \
 	libui \
 	libutils
 
+LOCAL_STATIC_LIBRARIES := libdrmhwc_utils
 
 LOCAL_C_INCLUDES := \
-        external/drm_gralloc \
+	external/drm_gralloc \
 	external/libdrm \
 	external/libdrm/include/drm \
 	system/core/include/utils \
@@ -38,34 +55,36 @@ LOCAL_C_INCLUDES := \
 	system/core/libsync/include \
 
 LOCAL_SRC_FILES := \
-	autolock.cpp \
 	drmresources.cpp \
 	drmcomposition.cpp \
 	drmcompositor.cpp \
-	drmcompositorworker.cpp \
 	drmconnector.cpp \
 	drmcrtc.cpp \
 	drmdisplaycomposition.cpp \
 	drmdisplaycompositor.cpp \
 	drmencoder.cpp \
 	drmeventlistener.cpp \
+	drmhwctwo.cpp \
 	drmmode.cpp \
 	drmplane.cpp \
 	drmproperty.cpp \
 	glworker.cpp \
-	hwcomposer.cpp \
-        platform.cpp \
-        platformdrmgeneric.cpp \
-        platformnv.cpp \
+	hwcutils.cpp \
+	platform.cpp \
 	separate_rects.cpp \
 	virtualcompositorworker.cpp \
-	vsyncworker.cpp \
-	worker.cpp
+	vsyncworker.cpp
+
+LOCAL_CPPFLAGS += \
+	-DHWC2_USE_CPP11 \
+	-DHWC2_INCLUDE_STRINGIFICATION
 
 ifeq ($(strip $(BOARD_DRM_HWCOMPOSER_BUFFER_IMPORTER)),nvidia-gralloc)
 LOCAL_CPPFLAGS += -DUSE_NVIDIA_IMPORTER
+LOCAL_SRC_FILES += platformnv.cpp
 else
 LOCAL_CPPFLAGS += -DUSE_DRM_GENERIC_IMPORTER
+LOCAL_SRC_FILES += platformdrmgeneric.cpp
 endif
 
 LOCAL_MODULE := hwcomposer.drm
@@ -75,4 +94,5 @@ LOCAL_MODULE_CLASS := SHARED_LIBRARIES
 LOCAL_MODULE_SUFFIX := $(TARGET_SHLIB_SUFFIX)
 include $(BUILD_SHARED_LIBRARY)
 
+include $(call all-makefiles-under,$(LOCAL_PATH))
 endif
