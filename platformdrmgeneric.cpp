@@ -24,8 +24,8 @@
 #include <xf86drm.h>
 #include <xf86drmMode.h>
 
-#include <cutils/log.h>
-#include <gralloc_drm_handle.h>
+#include <log/log.h>
+#include <gralloc_handle.h>
 #include <hardware/gralloc.h>
 
 namespace android {
@@ -84,7 +84,7 @@ uint32_t DrmGenericImporter::ConvertHalFormatToDrm(uint32_t hal_format) {
 }
 
 int DrmGenericImporter::ImportBuffer(buffer_handle_t handle, hwc_drm_bo_t *bo) {
-  gralloc_drm_handle_t *gr_handle = gralloc_drm_handle(handle);
+  gralloc_handle_t *gr_handle = gralloc_handle(handle);
   if (!gr_handle)
     return -EINVAL;
 
@@ -99,6 +99,7 @@ int DrmGenericImporter::ImportBuffer(buffer_handle_t handle, hwc_drm_bo_t *bo) {
   bo->width = gr_handle->width;
   bo->height = gr_handle->height;
   bo->format = ConvertHalFormatToDrm(gr_handle->format);
+  bo->usage = gr_handle->usage;
   bo->pitches[0] = gr_handle->stride;
   bo->gem_handles[0] = gem_handle;
   bo->offsets[0] = 0;
@@ -127,10 +128,14 @@ int DrmGenericImporter::ReleaseBuffer(hwc_drm_bo_t *bo) {
 
     gem_close.handle = bo->gem_handles[i];
     int ret = drmIoctl(drm_->fd(), DRM_IOCTL_GEM_CLOSE, &gem_close);
-    if (ret)
+    if (ret) {
       ALOGE("Failed to close gem handle %d %d", i, ret);
-    else
+    } else {
+      for (int j = i + 1; j < num_gem_handles; j++)
+        if (bo->gem_handles[j] == bo->gem_handles[i])
+          bo->gem_handles[j] = 0;
       bo->gem_handles[i] = 0;
+    }
   }
   return 0;
 }

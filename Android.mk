@@ -36,6 +36,7 @@ LOCAL_SRC_FILES := \
 LOCAL_CFLAGS := $(common_drm_hwcomposer_cflags)
 
 LOCAL_MODULE := libdrmhwc_utils
+LOCAL_VENDOR_MODULE := true
 
 include $(BUILD_STATIC_LIBRARY)
 
@@ -47,8 +48,6 @@ include $(CLEAR_VARS)
 LOCAL_SHARED_LIBRARIES := \
 	libcutils \
 	libdrm \
-	libEGL \
-	libGLESv2 \
 	libhardware \
 	liblog \
 	libsync \
@@ -58,41 +57,46 @@ LOCAL_SHARED_LIBRARIES := \
 LOCAL_STATIC_LIBRARIES := libdrmhwc_utils
 
 LOCAL_C_INCLUDES := \
-	external/drm_gralloc \
-	external/libdrm \
-	external/libdrm/include/drm \
-	system/core/include/utils \
-	system/core/libsync \
-	system/core/libsync/include \
+	system/core/libsync
 
 LOCAL_SRC_FILES := \
+	autolock.cpp \
 	drmresources.cpp \
-	drmcomposition.cpp \
-	drmcompositor.cpp \
 	drmconnector.cpp \
 	drmcrtc.cpp \
 	drmdisplaycomposition.cpp \
 	drmdisplaycompositor.cpp \
 	drmencoder.cpp \
 	drmeventlistener.cpp \
+	drmhwctwo.cpp \
 	drmmode.cpp \
 	drmplane.cpp \
 	drmproperty.cpp \
-	glworker.cpp \
-	hwcomposer.cpp \
+	hwcutils.cpp \
 	platform.cpp \
-	separate_rects.cpp \
-	virtualcompositorworker.cpp \
+	platformdrmgeneric.cpp \
 	vsyncworker.cpp
 
 LOCAL_CFLAGS := $(common_drm_hwcomposer_cflags)
 
-ifeq ($(strip $(BOARD_DRM_HWCOMPOSER_BUFFER_IMPORTER)),nvidia-gralloc)
-LOCAL_CPPFLAGS += -DUSE_NVIDIA_IMPORTER
-LOCAL_SRC_FILES += platformnv.cpp
+LOCAL_CPPFLAGS += \
+	-DHWC2_USE_CPP11 \
+	-DHWC2_INCLUDE_STRINGIFICATION
+
+
+ifeq ($(TARGET_PRODUCT),hikey960)
+LOCAL_CPPFLAGS += -DUSE_HISI_IMPORTER
+LOCAL_SRC_FILES += platformhisi.cpp
+LOCAL_C_INCLUDES += device/linaro/hikey/gralloc960/
+else ifeq ($(TARGET_PRODUCT),hikey)
+LOCAL_CPPFLAGS += -DUSE_HISI_IMPORTER
+LOCAL_SRC_FILES += platformhisi.cpp
+LOCAL_C_INCLUDES += device/linaro/hikey/gralloc/
+else ifeq ($(strip $(BOARD_DRM_HWCOMPOSER_BUFFER_IMPORTER)),minigbm)
+LOCAL_SRC_FILES += platformminigbm.cpp
+LOCAL_C_INCLUDES += external/minigbm/cros_gralloc/
 else
 LOCAL_CPPFLAGS += -DUSE_DRM_GENERIC_IMPORTER
-LOCAL_SRC_FILES += platformdrmgeneric.cpp
 endif
 
 LOCAL_MODULE := hwcomposer.drm
@@ -100,6 +104,8 @@ LOCAL_MODULE_TAGS := optional
 LOCAL_MODULE_RELATIVE_PATH := hw
 LOCAL_MODULE_CLASS := SHARED_LIBRARIES
 LOCAL_MODULE_SUFFIX := $(TARGET_SHLIB_SUFFIX)
+LOCAL_VENDOR_MODULE := true
+
 include $(BUILD_SHARED_LIBRARY)
 
 include $(call all-makefiles-under,$(LOCAL_PATH))

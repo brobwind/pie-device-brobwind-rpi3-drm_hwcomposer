@@ -26,7 +26,7 @@
 #include <xf86drm.h>
 #include <xf86drmMode.h>
 
-#include <cutils/log.h>
+#include <log/log.h>
 #include <hardware/hardware.h>
 
 namespace android {
@@ -34,8 +34,8 @@ namespace android {
 VSyncWorker::VSyncWorker()
     : Worker("vsync", HAL_PRIORITY_URGENT_DISPLAY),
       drm_(NULL),
-      procs_(NULL),
       display_(-1),
+      enabled_(false),
       last_timestamp_(-1) {
 }
 
@@ -49,9 +49,9 @@ int VSyncWorker::Init(DrmResources *drm, int display) {
   return InitWorker();
 }
 
-void VSyncWorker::SetProcs(hwc_procs_t const *procs) {
+void VSyncWorker::RegisterCallback(std::shared_ptr<VsyncCallback> callback) {
   Lock();
-  procs_ = procs;
+  callback_ = callback;
   Unlock();
 }
 
@@ -120,13 +120,14 @@ void VSyncWorker::Routine() {
   if (!enabled_) {
     ret = WaitForSignalOrExitLocked();
     if (ret == -EINTR) {
+      Unlock();
       return;
     }
   }
 
   bool enabled = enabled_;
   int display = display_;
-  hwc_procs_t const *procs = procs_;
+  std::shared_ptr<VsyncCallback> callback(callback_);
   Unlock();
 
   if (!enabled)
@@ -159,16 +160,16 @@ void VSyncWorker::Routine() {
   }
 
   /*
-   * There's a race here where a change in procs_ will not take effect until
+   * There's a race here where a change in callback_ will not take effect until
    * the next subsequent requested vsync. This is unavoidable since we can't
    * call the vsync hook while holding the thread lock.
    *
-   * We could shorten the race window by caching procs_ right before calling
-   * the hook. However, in practice, procs_ is only updated once, so it's not
+   * We could shorten the race window by caching callback_ right before calling
+   * the hook. However, in practice, callback_ is only updated once, so it's not
    * worth the overhead.
    */
-  if (procs && procs->vsync)
-    procs->vsync(procs, display, timestamp);
+  if (callback)
+    callback->Callback(display, timestamp);
   last_timestamp_ = timestamp;
 }
 }
