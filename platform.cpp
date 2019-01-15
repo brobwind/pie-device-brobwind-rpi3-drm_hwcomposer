@@ -16,8 +16,8 @@
 
 #define LOG_TAG "hwc-platform"
 
-#include "drmresources.h"
 #include "platform.h"
+#include "drmdevice.h"
 
 #include <log/log.h>
 
@@ -36,13 +36,57 @@ std::vector<DrmPlane *> Planner::GetUsablePlanes(
   return usable_planes;
 }
 
+int Planner::PlanStage::ValidatePlane(DrmPlane *plane, DrmHwcLayer *layer) {
+  int ret = 0;
+  uint64_t blend;
+
+  if ((plane->rotation_property().id() == 0) &&
+      layer->transform != DrmHwcTransform::kIdentity) {
+    ALOGE("Rotation is not supported on plane %d", plane->id());
+    return -EINVAL;
+  }
+
+  if (plane->alpha_property().id() == 0 && layer->alpha != 0xffff) {
+    ALOGE("Alpha is not supported on plane %d", plane->id());
+    return -EINVAL;
+  }
+
+  if (plane->blend_property().id() == 0) {
+    if ((layer->blending != DrmHwcBlending::kNone) &&
+        (layer->blending != DrmHwcBlending::kPreMult)) {
+      ALOGE("Blending is not supported on plane %d", plane->id());
+      return -EINVAL;
+    }
+  } else {
+    switch (layer->blending) {
+      case DrmHwcBlending::kPreMult:
+        std::tie(blend, ret) = plane->blend_property().GetEnumValueWithName(
+            "Pre-multiplied");
+        break;
+      case DrmHwcBlending::kCoverage:
+        std::tie(blend, ret) = plane->blend_property().GetEnumValueWithName(
+            "Coverage");
+        break;
+      case DrmHwcBlending::kNone:
+      default:
+        std::tie(blend,
+                 ret) = plane->blend_property().GetEnumValueWithName("None");
+        break;
+    }
+    if (ret)
+      ALOGE("Expected a valid blend mode on plane %d", plane->id());
+  }
+
+  return ret;
+}
+
 std::tuple<int, std::vector<DrmCompositionPlane>> Planner::ProvisionPlanes(
     std::map<size_t, DrmHwcLayer *> &layers, DrmCrtc *crtc,
     std::vector<DrmPlane *> *primary_planes,
     std::vector<DrmPlane *> *overlay_planes) {
   std::vector<DrmCompositionPlane> composition;
-  std::vector<DrmPlane *> planes =
-      GetUsablePlanes(crtc, primary_planes, overlay_planes);
+  std::vector<DrmPlane *> planes = GetUsablePlanes(crtc, primary_planes,
+                                                   overlay_planes);
   if (planes.empty()) {
     ALOGE("Display %d has no usable planes", crtc->display());
     return std::make_tuple(-ENODEV, std::vector<DrmCompositionPlane>());
@@ -73,9 +117,11 @@ int PlanStageProtected::ProvisionPlanes(
     }
 
     ret = Emplace(composition, planes, DrmCompositionPlane::Type::kLayer, crtc,
-                  i->first);
-    if (ret)
+                  std::make_pair(i->first, i->second));
+    if (ret) {
       ALOGE("Failed to dedicate protected layer! Dropping it.");
+      return ret;
+    }
 
     protected_zorder = i->first;
     i = layers.erase(i);
@@ -91,14 +137,16 @@ int PlanStageGreedy::ProvisionPlanes(
   // Fill up the remaining planes
   for (auto i = layers.begin(); i != layers.end(); i = layers.erase(i)) {
     int ret = Emplace(composition, planes, DrmCompositionPlane::Type::kLayer,
-                      crtc, i->first);
+                      crtc, std::make_pair(i->first, i->second));
     // We don't have any planes left
     if (ret == -ENOENT)
       break;
-    else if (ret)
+    else if (ret) {
       ALOGE("Failed to emplace layer %zu, dropping it", i->first);
+      return ret;
+    }
   }
 
   return 0;
 }
-}
+}  // namespace android

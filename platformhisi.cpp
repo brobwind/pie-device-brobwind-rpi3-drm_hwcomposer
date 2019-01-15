@@ -16,26 +16,25 @@
 
 #define LOG_TAG "hwc-platform-hisi"
 
-#include "drmresources.h"
-#include "platform.h"
 #include "platformhisi.h"
-
+#include "drmdevice.h"
+#include "platform.h"
 
 #include <drm/drm_fourcc.h>
-#include <cinttypes>
 #include <stdatomic.h>
 #include <xf86drm.h>
 #include <xf86drmMode.h>
+#include <cinttypes>
 
-#include <log/log.h>
 #include <hardware/gralloc.h>
+#include <log/log.h>
 #include "gralloc_priv.h"
 
 #define MALI_ALIGN(value, base) (((value) + ((base)-1)) & ~((base)-1))
 
 namespace android {
 
-Importer *Importer::CreateInstance(DrmResources *drm) {
+Importer *Importer::CreateInstance(DrmDevice *drm) {
   HisiImporter *importer = new HisiImporter(drm);
   if (!importer)
     return NULL;
@@ -49,7 +48,8 @@ Importer *Importer::CreateInstance(DrmResources *drm) {
   return importer;
 }
 
-HisiImporter::HisiImporter(DrmResources *drm) : DrmGenericImporter(drm), drm_(drm) {
+HisiImporter::HisiImporter(DrmDevice *drm)
+    : DrmGenericImporter(drm), drm_(drm) {
 }
 
 HisiImporter::~HisiImporter() {
@@ -71,9 +71,16 @@ int HisiImporter::Init() {
 }
 
 int HisiImporter::ImportBuffer(buffer_handle_t handle, hwc_drm_bo_t *bo) {
-  private_handle_t const *hnd =
-      reinterpret_cast<private_handle_t const *>(handle);
+  memset(bo, 0, sizeof(hwc_drm_bo_t));
+
+  private_handle_t const *hnd = reinterpret_cast<private_handle_t const *>(
+      handle);
   if (!hnd)
+    return -EINVAL;
+
+  // We can't import these types of buffers.
+  // These buffers should have been filtered out with CanImportBuffer()
+  if (!(hnd->usage & GRALLOC_USAGE_HW_FB))
     return -EINVAL;
 
   uint32_t gem_handle;
@@ -87,12 +94,12 @@ int HisiImporter::ImportBuffer(buffer_handle_t handle, hwc_drm_bo_t *bo) {
   if (fmt < 0)
     return fmt;
 
-  memset(bo, 0, sizeof(hwc_drm_bo_t));
   bo->width = hnd->width;
   bo->height = hnd->height;
+  bo->hal_format = hnd->req_format;
   bo->format = fmt;
   bo->usage = hnd->usage;
-
+  bo->pixel_stride = hnd->stride;
   bo->pitches[0] = hnd->byte_stride;
   bo->gem_handles[0] = gem_handle;
   bo->offsets[0] = 0;
@@ -132,9 +139,48 @@ int HisiImporter::ImportBuffer(buffer_handle_t handle, hwc_drm_bo_t *bo) {
   return ret;
 }
 
-std::unique_ptr<Planner> Planner::CreateInstance(DrmResources *) {
+bool HisiImporter::CanImportBuffer(buffer_handle_t handle) {
+  private_handle_t const *hnd = reinterpret_cast<private_handle_t const *>(
+      handle);
+  return hnd && (hnd->usage & GRALLOC_USAGE_HW_FB);
+}
+
+class PlanStageHiSi : public Planner::PlanStage {
+ public:
+  int ProvisionPlanes(std::vector<DrmCompositionPlane> *composition,
+                      std::map<size_t, DrmHwcLayer *> &layers, DrmCrtc *crtc,
+                      std::vector<DrmPlane *> *planes) {
+    int layers_added = 0;
+    // Fill up as many DRM planes as we can with buffers that have HW_FB usage.
+    // Buffers without HW_FB should have been filtered out with
+    // CanImportBuffer(), if we meet one here, just skip it.
+    for (auto i = layers.begin(); i != layers.end(); i = layers.erase(i)) {
+      if (!(i->second->gralloc_buffer_usage & GRALLOC_USAGE_HW_FB))
+        continue;
+
+      int ret = Emplace(composition, planes, DrmCompositionPlane::Type::kLayer,
+                        crtc, std::make_pair(i->first, i->second));
+      layers_added++;
+      // We don't have any planes left
+      if (ret == -ENOENT)
+        break;
+      else if (ret) {
+        ALOGE("Failed to emplace layer %zu, dropping it", i->first);
+        return ret;
+      }
+    }
+    // If we didn't emplace anything, return an error to ensure we force client
+    // compositing.
+    if (!layers_added)
+      return -EINVAL;
+
+    return 0;
+  }
+};
+
+std::unique_ptr<Planner> Planner::CreateInstance(DrmDevice *) {
   std::unique_ptr<Planner> planner(new Planner);
-  planner->AddStage<PlanStageGreedy>();
+  planner->AddStage<PlanStageHiSi>();
   return planner;
 }
-}
+}  // namespace android

@@ -17,7 +17,7 @@
 #ifndef ANDROID_PLATFORM_HISI_H_
 #define ANDROID_PLATFORM_HISI_H_
 
-#include "drmresources.h"
+#include "drmdevice.h"
 #include "platform.h"
 #include "platformdrmgeneric.h"
 
@@ -29,19 +29,20 @@ namespace android {
 
 class HisiImporter : public DrmGenericImporter {
  public:
-  HisiImporter(DrmResources *drm);
+  HisiImporter(DrmDevice *drm);
   ~HisiImporter() override;
 
   int Init();
 
   int ImportBuffer(buffer_handle_t handle, hwc_drm_bo_t *bo) override;
 
- private:
+  bool CanImportBuffer(buffer_handle_t handle) override;
 
-  DrmResources *drm_;
+ private:
+  DrmDevice *drm_;
 
   const gralloc_module_t *gralloc_;
 };
-}
+}  // namespace android
 
 #endif
