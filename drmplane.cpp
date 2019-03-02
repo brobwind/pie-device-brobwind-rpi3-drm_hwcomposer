@@ -121,7 +121,7 @@ int DrmPlane::Init() {
   ret = drm_->GetPlaneProperty(*this, "zpos", &zpos_property_);
   if (ret)
     ALOGE("Could not get zpos property for plane %u", id());
-
+#if 0
   ret = drm_->GetPlaneProperty(*this, "rotation", &rotation_property_);
   if (ret)
     ALOGE("Could not get rotation property");
@@ -129,6 +129,7 @@ int DrmPlane::Init() {
   ret = drm_->GetPlaneProperty(*this, "alpha", &alpha_property_);
   if (ret)
     ALOGI("Could not get alpha property");
+#endif
 
   ret = drm_->GetPlaneProperty(*this, "pixel blend mode", &blend_property_);
   if (ret)

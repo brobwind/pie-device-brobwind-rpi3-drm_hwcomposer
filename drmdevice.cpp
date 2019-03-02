@@ -97,6 +97,10 @@ std::tuple<int, int> DrmDevice::Init(const char *path, int num_displays) {
     drmModeFreeCrtc(c);
 
     ret = crtc->Init();
+    if (crtc->pipe() == 2) {
+      crtc->set_display(0);
+    }
+
     if (ret) {
       ALOGE("Failed to initialize crtc %d", res->crtcs[i]);
       break;
@@ -245,6 +249,11 @@ std::tuple<int, int> DrmDevice::Init(const char *path, int num_displays) {
   }
 
   for (auto &conn : connectors_) {
+    uint64_t val = 0;
+    conn->crtc_id_property().value(&val);
+    if (val == 0) {
+      continue;
+    }
     ret = CreateDisplayPipe(conn.get());
     if (ret) {
       ALOGE("Failed CreateDisplayPipe %d with %d", conn->id(), ret);
